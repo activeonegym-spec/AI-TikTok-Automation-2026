@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "0 3 * * *"
 
+permissions:
+  contents: write
+
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -25,3 +28,13 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python generate.py
+
+      - name: Save generated content
+        run: |
+          git config user.name "TikTok AI Bot"
+          git config user.email "actions@github.com"
+          git add content/daily_videos.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Save daily TikTok scripts"
+            git push
+          fi
