@@ -5,25 +5,32 @@ from google import genai
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 prompt = """
-Create exactly 9 original TikTok video concepts for my account.
+Create exactly 9 original TikTok video concepts
+for a mixed viral entertainment account.
 
-Topics:
-- Fitness and activewear
-- Affiliate marketing
-- Brand ambassador opportunities
-- Finding customers on TikTok
+Include a variety of:
+- Interesting facts
+- Life hacks
+- Funny moments
+- Motivation
+- Technology
+- Animals
+- Amazing discoveries
+- Storytelling
+- Trending video formats
 
 For each video provide:
-1. Catchy hook
-2. 15-30 second script
-3. Shot-by-shot filming instructions
+1. Catchy opening hook
+2. 20-30 second script
+3. Scene-by-scene visual instructions
 4. On-screen text
-5. Caption with CTA
-6. Relevant hashtags
+5. Voiceover
+6. Caption
+7. Hashtags
 
-Use simple, natural English.
-Make every video different.
-Do not invent product claims or fake testimonials.
+Make all 9 videos different.
+Use engaging, natural English.
+Avoid fake facts and copyrighted footage.
 """
 
 response = client.interactions.create(
