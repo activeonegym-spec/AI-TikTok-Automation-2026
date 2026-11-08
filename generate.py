@@ -47,3 +47,21 @@ Path("content/daily_videos.txt").write_text(
 )
 
 print("Successfully generated 9 TikTok video scripts!")
+import requests
+
+pixabay_key = os.environ["PIXABAY_API_KEY"]
+
+response = requests.get(
+    "https://pixabay.com/api/videos/",
+    params={
+        "key": pixabay_key,
+        "q": "nature",
+        "per_page": 3
+    },
+    timeout=30
+)
+
+response.raise_for_status()
+videos = response.json()["hits"]
+
+print(f"Pixabay connection successful! Found {len(videos)} videos.")
