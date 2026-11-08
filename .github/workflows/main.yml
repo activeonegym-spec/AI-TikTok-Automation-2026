@@ -1,3 +1,4 @@
+
 name: AI TikTok Content Generator
 
 on:
@@ -23,9 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-  sudo apt-get update
-  sudo apt-get install -y ffmpeg
-  pip install google-genai requests gTTS
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install google-genai requests gTTS
 
       - name: Generate content
         env:
