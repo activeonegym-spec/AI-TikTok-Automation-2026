@@ -33,12 +33,12 @@ Use engaging, natural English.
 Avoid fake facts and copyrighted footage.
 """
 
-response = client.interactions.create(
+response = client.models.generate_content(
     model="gemini-3.8-flash",
-    input=prompt
+    contents=prompt
 )
 
-output = response.output_text
+output = response.text
 
 Path("content").mkdir(exist_ok=True)
 Path("content/daily_videos.txt").write_text(
