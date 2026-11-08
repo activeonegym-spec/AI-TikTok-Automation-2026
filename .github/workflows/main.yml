@@ -1,5 +1,5 @@
 
-name: AI TikTok Content Generator
+name: AI TikTok Video Generator
 
 on:
   workflow_dispatch:
@@ -28,13 +28,13 @@ jobs:
           sudo apt-get install -y ffmpeg
           pip install google-genai requests gTTS
 
-      - name: Generate content
+      - name: Generate 9 TikTok videos
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: python generate.py
 
-      - name: Save generated content
+      - name: Save scripts
         run: |
           git config user.name "TikTok AI Bot"
           git config user.email "actions@github.com"
@@ -43,3 +43,11 @@ jobs:
             git commit -m "Save daily TikTok scripts"
             git push
           fi
+
+      - name: Upload generated MP4 videos
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-tiktok-videos
+          path: videos/*.mp4
+          if-no-files-found: error
+          retention-days: 7
