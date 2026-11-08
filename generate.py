@@ -1,138 +1,228 @@
 
 import os
+import json
 import time
+import subprocess
 import requests
 from pathlib import Path
 from google import genai
+from gtts import gTTS
 
-# Check API keys
-gemini_key = os.environ.get("GEMINI_API_KEY")
-pixabay_key = os.environ.get("PIXABAY_API_KEY")
+GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
-if not gemini_key:
-    raise ValueError("GEMINI_API_KEY is missing in GitHub Secrets.")
+client = genai.Client(api_key=GEMINI_KEY)
 
-client = genai.Client(api_key=gemini_key)
+Path("content").mkdir(exist_ok=True)
+Path("videos").mkdir(exist_ok=True)
+Path("temp").mkdir(exist_ok=True)
 
-# Generate exactly 9 TikTok video scripts
 prompt = """
-Create exactly 9 original, engaging TikTok video scripts
-for a mixed viral entertainment account.
+Create exactly 9 original viral-style TikTok video concepts.
+Use a mixture of facts, life hacks, funny moments, motivation,
+technology, animals, discoveries, storytelling and entertainment.
 
-Include these topics:
-1. Interesting facts
-2. Life hacks
-3. Funny moments
-4. Motivation
-5. Technology
-6. Animals
-7. Amazing discoveries
-8. Short storytelling
-9. Viral-style entertainment
+Return ONLY valid JSON in this exact structure:
+{
+  "videos": [
+    {
+      "title": "Short title",
+      "hook": "Opening sentence",
+      "script": "20 to 30 second spoken script",
+      "visual_search": "2 or 3 simple Pixabay search words",
+      "caption": "TikTok caption",
+      "hashtags": "#tag1 #tag2 #tag3"
+    }
+  ]
+}
 
-For EACH video include:
-- Catchy opening hook
-- 20-30 second voiceover script
-- Scene-by-scene visual instructions
-- On-screen captions
-- Video caption
-- Relevant hashtags
-
-Requirements:
-- Make all 9 videos different.
-- Use natural, engaging English.
-- Use accurate facts. Do not invent statistics.
-- Avoid copyrighted characters, music and footage.
-- Make the scripts suitable for faceless videos.
+Make exactly 9 different videos.
+Use accurate facts and natural English.
+No copyrighted characters or invented statistics.
 """
 
-models = [
-    "gemini-3.8-flash",
-    "gemini-flash-latest"
-]
+print("Generating 9 video scripts...")
 
-output = None
+response = client.models.generate_content(
+    model="gemini-3.8-flash",
+    contents=prompt,
+    config={"response_mime_type": "application/json"}
+)
 
-# Retry if Gemini is temporarily unavailable
-for model in models:
-    for attempt in range(3):
-        try:
-            print(f"Trying {model}, attempt {attempt + 1}...")
+data = json.loads(response.text)
+items = data["videos"]
 
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt
-            )
+if len(items) != 9:
+    raise ValueError("Gemini did not return exactly 9 videos.")
 
-            if response.text and response.text.strip():
-                output = response.text.strip()
-                print(f"Success using {model}")
-                break
-
-            raise ValueError("Gemini returned an empty response.")
-
-        except Exception as error:
-            print(f"Attempt failed: {error}")
-
-            if attempt < 2:
-                wait_time = 2 ** (attempt + 1)
-                print(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-
-    if output:
-        break
-
-if not output:
-    raise RuntimeError(
-        "Gemini could not generate scripts. "
-        "Please check the API key, model availability and quota."
+def get_duration(audio):
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(audio)
+        ],
+        capture_output=True, text=True, check=True
     )
+    return float(result.stdout.strip())
 
-# Create content folder and save scripts
-Path("content").mkdir(exist_ok=True)
+def timestamp(seconds):
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    return f"{hours:02}:{minutes:02}:{secs:06.3f}".replace(".", ",")
 
-content = "# DAILY TIKTOK VIDEO SCRIPTS\n\n"
-content += output
+def make_subtitles(text, duration, path):
+    words = text.split()
+    chunks = [
+        words[i:i + 7]
+        for i in range(0, len(words), 7)
+    ]
 
-# Pixabay search is optional
-if pixabay_key:
+    total = max(len(words), 1)
+    lines = []
+    word_position = 0
+
+    for number, chunk in enumerate(chunks, 1):
+        start = duration * word_position / total
+        word_position += len(chunk)
+        end = duration * word_position / total
+
+        lines.extend([
+            str(number),
+            f"{timestamp(start)} --> {timestamp(end)}",
+            " ".join(chunk),
+            ""
+        ])
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+def get_pixabay_video(query, output):
     try:
-        print("Connecting to Pixabay...")
-
-        pixabay_response = requests.get(
+        result = requests.get(
             "https://pixabay.com/api/videos/",
             params={
-                "key": pixabay_key,
-                "q": "nature",
-                "per_page": 3
+                "key": PIXABAY_KEY,
+                "q": query,
+                "per_page": 5
             },
             timeout=30
         )
+        result.raise_for_status()
 
-        pixabay_response.raise_for_status()
-        videos = pixabay_response.json().get("hits", [])
+        hits = result.json().get("hits", [])
+        if not hits:
+            return False
 
-        content += "\n\n# PIXABAY STOCK VIDEO REFERENCES\n"
+        files = hits[0].get("videos", {})
+        video = files.get("large") or files.get("medium")
 
-        for index, video in enumerate(videos, 1):
-            video_files = video.get("videos", {})
-            medium = video_files.get("medium", {})
-            video_url = medium.get("url")
+        if not video or not video.get("url"):
+            return False
 
-            if video_url:
-                content += f"\nVideo {index}: {video_url}\n"
+        download = requests.get(
+            video["url"], timeout=60
+        )
+        download.raise_for_status()
+        output.write_bytes(download.content)
 
-        print(f"Pixabay found {len(videos)} clips.")
+        return output.stat().st_size > 10000
 
     except Exception as error:
-        print(f"Pixabay unavailable. Continuing: {error}")
+        print("Pixabay error:", error)
+        return False
 
-else:
-    print("Pixabay key not found. Skipping stock video search.")
+def render_video(item, number):
+    title = item["title"]
+    spoken_text = item["hook"] + " " + item["script"]
+
+    audio = Path(f"temp/audio_{number}.mp3")
+    background = Path(f"temp/background_{number}.mp4")
+    subtitles = Path(f"temp/subtitles_{number}.srt")
+    output = Path(f"videos/video_{number:02}.mp4")
+
+    print(f"Creating video {number}: {title}")
+
+    gTTS(text=spoken_text, lang="en").save(str(audio))
+    duration = get_duration(audio)
+
+    make_subtitles(spoken_text, duration, subtitles)
+
+    found = get_pixabay_video(
+        item["visual_search"], background
+    )
+
+    subtitle_filter = (
+        f"subtitles=filename='{subtitles.as_posix()}':"
+        "force_style='FontName=DejaVu Sans,"
+        "FontSize=18,PrimaryColour=&H00FFFFFF,"
+        "OutlineColour=&H00000000,BorderStyle=1,"
+        "Outline=2,Shadow=1,Alignment=2,MarginV=180'"
+    )
+
+    video_filter = (
+        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920," + subtitle_filter
+    )
+
+    if found:
+        command = [
+            "ffmpeg", "-y",
+            "-stream_loop", "-1",
+            "-i", str(background),
+            "-i", str(audio),
+            "-vf", video_filter,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", str(duration),
+        ]
+    else:
+        command = [
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "color=c=0x18202b:s=1080x1920:r=30",
+            "-i", str(audio),
+            "-vf", video_filter,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", str(duration),
+        ]
+
+    command += [
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-shortest",
+        str(output)
+    ]
+
+    subprocess.run(command, check=True)
+
+    return output
+
+# Save scripts and captions
+report = ["DAILY TIKTOK CONTENT\n"]
+
+for number, item in enumerate(items, 1):
+    report.extend([
+        f"\nVIDEO {number}: {item['title']}",
+        f"Script: {item['hook']} {item['script']}",
+        f"Caption: {item['caption']}",
+        f"Hashtags: {item['hashtags']}",
+        ""
+    ])
 
 Path("content/daily_videos.txt").write_text(
-    content,
-    encoding="utf-8"
+    "\n".join(report), encoding="utf-8"
 )
 
-print("SUCCESS: Daily TikTok scripts saved!")
+# Render all 9 videos
+for number, item in enumerate(items, 1):
+    render_video(item, number)
+    time.sleep(2)
+
+print("SUCCESS: All 9 TikTok MP4 videos created!")
